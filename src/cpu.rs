@@ -174,29 +174,29 @@ impl<M: Mem> Cpu<M> {
             0x88 => self.dey(),
 
             /* Shifts */
-            0x0a => { let addr = self.accumulator(); self.asl(addr) },
-            0x06 => { let addr = self.zero_page(); self.asl(addr) },
-            0x16 => { let addr = self.zero_page_x(); self.asl(addr) },
-            0x0e => { let addr = self.absolute(); self.asl(addr) },
-            0x1e => { let addr = self.absolute_x(); self.asl(addr) },
+            0x0a => self.asl(None),
+            0x06 => { let addr = self.zero_page(); self.asl(Some(addr)) },
+            0x16 => { let addr = self.zero_page_x(); self.asl(Some(addr)) },
+            0x0e => { let addr = self.absolute(); self.asl(Some(addr)) },
+            0x1e => { let addr = self.absolute_x(); self.asl(Some(addr)) },
 
-            0x4a => { let addr = self.accumulator(); self.lsr(addr) },
-            0x46 => { let addr = self.zero_page(); self.lsr(addr) },
-            0x56 => { let addr = self.zero_page_x(); self.lsr(addr) },
-            0x4e => { let addr = self.absolute(); self.lsr(addr) },
-            0x5e => { let addr = self.absolute_x(); self.lsr(addr) },
+            0x4a => self.lsr(None),
+            0x46 => { let addr = self.zero_page(); self.lsr(Some(addr)) },
+            0x56 => { let addr = self.zero_page_x(); self.lsr(Some(addr)) },
+            0x4e => { let addr = self.absolute(); self.lsr(Some(addr)) },
+            0x5e => { let addr = self.absolute_x(); self.lsr(Some(addr)) },
 
-            0x2a => { let addr = self.accumulator(); self.rol(addr) },
-            0x26 => { let addr = self.zero_page(); self.rol(addr) },
-            0x36 => { let addr = self.zero_page_x(); self.rol(addr) },
-            0x2e => { let addr = self.absolute(); self.rol(addr) },
-            0x3e => { let addr = self.absolute_x(); self.rol(addr) },
+            0x2a => self.rol(None),
+            0x26 => { let addr = self.zero_page(); self.rol(Some(addr)) },
+            0x36 => { let addr = self.zero_page_x(); self.rol(Some(addr)) },
+            0x2e => { let addr = self.absolute(); self.rol(Some(addr)) },
+            0x3e => { let addr = self.absolute_x(); self.rol(Some(addr)) },
 
-            0x6a => { let addr = self.accumulator(); self.ror(addr) },
-            0x66 => { let addr = self.zero_page(); self.ror(addr) },
-            0x76 => { let addr = self.zero_page_x(); self.ror(addr) },
-            0x6e => { let addr = self.absolute(); self.ror(addr) },
-            0x7e => { let addr = self.absolute_x(); self.ror(addr) },
+            0x6a => self.ror(None),
+            0x66 => { let addr = self.zero_page(); self.ror(Some(addr)) },
+            0x76 => { let addr = self.zero_page_x(); self.ror(Some(addr)) },
+            0x6e => { let addr = self.absolute(); self.ror(Some(addr)) },
+            0x7e => { let addr = self.absolute_x(); self.ror(Some(addr)) },
 
             /* Jumps & Calls */
             0x4c => { let addr = self.absolute(); self.jmp(addr) },
@@ -260,52 +260,54 @@ impl<M: Mem> Cpu<M> {
     }
 
     /* Addressing Modes */
-    fn accumulator(&self) -> u16 {
-        unimplemented!();
+    fn immediate(&mut self) -> u16 {
+        let addr = self.pc;
+        self.pc += 1;
+        addr
     }
 
-    fn immediate(&self) -> u16 {
-        unimplemented!();
+    fn zero_page(&mut self) -> u16 {
+        self.next8() as u16
     }
 
-    fn zero_page(&self) -> u16 {
-        unimplemented!();
+    fn zero_page_x(&mut self) -> u16 {
+        (self.next8() + self.x) as u16
     }
 
-    fn zero_page_x(&self) -> u16 {
-        unimplemented!();
+    fn zero_page_y(&mut self) -> u16 {
+        (self.next8() + self.y) as u16
     }
 
-    fn zero_page_y(&self) -> u16 {
-        unimplemented!();
+    fn relative(&mut self) -> u16 {
+        self.next8() as u16 + self.pc
     }
 
-    fn relative(&self) -> u16 {
-        unimplemented!();
+    fn absolute(&mut self) -> u16 {
+        self.next16()
     }
 
-    fn absolute(&self) -> u16 {
-        unimplemented!();
+    fn absolute_x(&mut self) -> u16 {
+        self.next16() + self.x as u16
     }
 
-    fn absolute_x(&self) -> u16 {
-        unimplemented!();
+    fn absolute_y(&mut self) -> u16 {
+        self.next16() + self.y as u16
     }
 
-    fn absolute_y(&self) -> u16 {
-        unimplemented!();
+    /* I think like these reads get fucked up */
+    fn indirect(&mut self) -> u16 {
+        let val = self.next16();
+        self.read16(val)
     }
 
-    fn indirect(&self) -> u16 {
-        unimplemented!();
+    fn indexed_indirect(&mut self) -> u16 {
+        let val = self.next8() as u16;
+        self.read16(val) + self.y as u16
     }
 
-    fn indexed_indirect(&self) -> u16 {
-        unimplemented!();
-    }
-
-    fn indirect_indexed(&self) -> u16 {
-        unimplemented!();
+    fn indirect_indexed(&mut self) -> u16 {
+        let val = self.next8() as u16;
+        self.read16(val + self.x as u16)
     }
 
     /* Load / Store */
@@ -445,19 +447,19 @@ impl<M: Mem> Cpu<M> {
 
 
     /* Shifts */
-    fn asl(&mut self, addr: u16) {
+    fn asl(&mut self, addr: Option<u16>) {
         unimplemented!();
     }
 
-    fn lsr(&mut self, addr: u16) {
+    fn lsr(&mut self, addr: Option<u16>) {
         unimplemented!();
     }
 
-    fn rol(&mut self, addr: u16) {
+    fn rol(&mut self, addr: Option<u16>) {
         unimplemented!();
     }
 
-    fn ror(&mut self, addr: u16) {
+    fn ror(&mut self, addr: Option<u16>) {
         unimplemented!();
     }
 
