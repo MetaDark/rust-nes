@@ -5,12 +5,16 @@ pub trait Mem {
     fn write8(&mut self, addr: u16, val: u8);
 
     fn read16(&self, addr: u16) -> u16 {
-        (self.read8(addr) as u16) << 8 | (self.read8(addr + 1) as u16)
+        let low = self.read8(addr) as u16;
+        let high = self.read8(addr + 1) as u16;
+        high << 8 | low
     }
 
     fn write16(&mut self, addr: u16, val: u16) {
-        self.write8(addr, (val >> 8) as u8);
-        self.write8(addr + 1, (val & 0x0f) as u8)
+        let low = val as u8;
+        let high = (val >> 8) as u8;
+        self.write8(addr, low);
+        self.write8(addr + 1, high);
     }
 }
 
