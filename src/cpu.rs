@@ -1,6 +1,15 @@
 #![allow(unused_variables)]
 use mem::Mem;
 
+/* TODO: Use a bitfield macro for simplication */
+const CARRY_FLAG:    u8 = 1 << 0;
+const ZERO_FLAG:     u8 = 1 << 1;
+const IRQ_FLAG:      u8 = 1 << 2;
+const DECIMAL_FLAG:  u8 = 1 << 3;
+const BREAK_FLAG:    u8 = 1 << 4;
+const OVERFLOW_FLAG: u8 = 1 << 6;
+const NEGATIVE_FLAG: u8 = 1 << 7;
+
 /*
  * Reference: http://obelisk.me.uk/6502/instructions.html
  */
@@ -21,7 +30,7 @@ impl<M: Mem> Cpu<M> {
             pc: 0xc000,
             sp: 0xfd,
             a: 0, x: 0, y: 0,
-            status: 0,
+            status: 0x24,
         }
     }
 
@@ -229,7 +238,7 @@ impl<M: Mem> Cpu<M> {
             0xea => self.nop(),
             0x40 => self.rti(),
 
-            _ => unimplemented!(),
+            _ => panic!("not yet implemented opcode 0x{:02X}", opcode),
         }
     }
 
@@ -248,22 +257,22 @@ impl<M: Mem> Cpu<M> {
 
     /* Memory Access */
     fn next8(&mut self) -> u8 {
-        let addr = self.read8(self.pc);
+        let val = self.read8(self.pc);
         self.pc += 1;
-        addr
+        val
     }
 
     fn next16(&mut self) -> u16 {
-        let addr = self.read16(self.pc);
+        let val = self.read16(self.pc);
         self.pc += 2;
-        addr
+        val
     }
 
     /* Addressing Modes */
     fn immediate(&mut self) -> u16 {
-        let addr = self.pc;
+        let val = self.pc;
         self.pc += 1;
-        addr
+        val
     }
 
     fn zero_page(&mut self) -> u16 {
@@ -296,157 +305,239 @@ impl<M: Mem> Cpu<M> {
 
     /* I think like these reads get fucked up */
     fn indirect(&mut self) -> u16 {
-        let val = self.next16();
-        self.read16(val)
+        let addr = self.next16();
+        self.read16(addr)
     }
 
     fn indexed_indirect(&mut self) -> u16 {
-        let val = self.next8() as u16;
-        self.read16(val) + self.y as u16
+        let addr = self.next8() as u16;
+        self.read16(addr) + self.y as u16
     }
 
     fn indirect_indexed(&mut self) -> u16 {
-        let val = self.next8() as u16;
-        self.read16(val + self.x as u16)
+        let addr = self.next8() as u16;
+        self.read16(addr + self.x as u16)
     }
 
     /* Load / Store */
     fn lda(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.read8(addr);
+        self.a = val;
+        self.set_zn(val);
     }
 
     fn ldx(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.read8(addr);
+        self.x = val;
+        self.set_zn(val);
     }
 
     fn ldy(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.read8(addr);
+        self.y = val;
+        self.set_zn(val);
     }
 
     fn sta(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.a;
+        self.write8(addr, val);
     }
 
     fn stx(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.x;
+        self.write8(addr, val);
     }
 
     fn sty(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.y;
+        self.write8(addr, val);
     }
 
 
     /* Register Transfers */
     fn tax(&mut self) {
-        unimplemented!();
+        let val = self.a;
+        self.x = val;
+        self.set_zn(val);
     }
 
     fn tay(&mut self) {
-        unimplemented!();
+        let val = self.a;
+        self.y = val;
+        self.set_zn(val);
     }
 
     fn txa(&mut self) {
-        unimplemented!();
+        let val = self.x;
+        self.a = val;
+        self.set_zn(val);
     }
 
     fn tya(&mut self) {
-        unimplemented!();
+        let val = self.y;
+        self.a = val;
+        self.set_zn(val);
     }
 
 
     /* Stack Operations */
     fn tsx(&mut self) {
-        unimplemented!();
+        let val = self.sp;
+        self.x = val;
+        self.set_zn(val);
     }
 
     fn txs(&mut self) {
-        unimplemented!();
+        let val = self.x;
+        self.sp = val;
+        self.set_zn(val);
     }
 
     fn pha(&mut self) {
-        unimplemented!();
+        let val = self.a;
+        self.push8(val);
     }
 
     fn php(&mut self) {
-        unimplemented!();
+        let status = self.read_status();
+        self.push8(status);
     }
 
     fn pla(&mut self) {
-        unimplemented!();
+        let val = self.pull8();
+        self.a = val;
+        self.set_zn(val)
     }
 
     fn plp(&mut self) {
-        unimplemented!();
+        let status = self.pull8();
+        self.write_status(status)
     }
 
 
     /* Logical */
     fn and(&mut self, addr: u16) {
-        unimplemented!();
+        let result = self.a & self.read8(addr);
+        self.a = result;
+        self.set_zn(result);
     }
 
     fn eor(&mut self, addr: u16) {
-        unimplemented!();
+        let result = self.a ^ self.read8(addr);
+        self.a = result;
+        self.set_zn(result);
     }
 
     fn ora(&mut self, addr: u16) {
-        unimplemented!();
+        let result = self.a | self.read8(addr);
+        self.a = result;
+        self.set_zn(result);
     }
 
     fn bit(&mut self, addr: u16) {
-        unimplemented!();
+        let val = self.a;
+        let mask = self.read8(addr);
+        self.set_status(ZERO_FLAG, (mask & val) == 0);
+        self.set_status(OVERFLOW_FLAG, (mask >> 6) != 0);
+        self.set_status(NEGATIVE_FLAG, (mask >> 7) != 0);
     }
 
 
     /* Arithmetic */
     fn adc(&mut self, addr: u16) {
-        unimplemented!();
+        let a = self.a as u16;
+        let b = self.read8(addr) as u16;
+        let result = a + b + self.get_status(CARRY_FLAG) as u16;
+
+        self.a = result as u8;
+        self.set_status(CARRY_FLAG, (result & 0x0100) != 0);
+        self.set_status(OVERFLOW_FLAG, unimplemented!());
+        self.set_zn(result as u8);
     }
 
     fn sbc(&mut self, addr: u16) {
-        unimplemented!();
+        let a = self.a as u16;
+        let b = self.read8(addr) as u16;
+        let result = a - b - !self.get_status(CARRY_FLAG) as u16;
+
+        self.a = result as u8;
+        self.set_status(CARRY_FLAG, (result & 0x0100) == 0);
+        self.set_status(OVERFLOW_FLAG, unimplemented!());
+        self.set_zn(result as u8);
+    }
+
+    fn cmp_base(&mut self, a: u8, b: u8) {
+        let result = a - b;
+        self.set_status(CARRY_FLAG, b <= a);
+        self.set_zn(result);
     }
 
     fn cmp(&mut self, addr: u16) {
-        unimplemented!();
+        let a = self.a;
+        let b = self.read8(addr);
+        self.cmp_base(a, b);
     }
 
     fn cpx(&mut self, addr: u16) {
-        unimplemented!();
+        let a = self.x;
+        let b = self.read8(addr);
+        self.cmp_base(a, b);
     }
 
     fn cpy(&mut self, addr: u16) {
-        unimplemented!();
+        let a = self.y;
+        let b = self.read8(addr);
+        self.cmp_base(a, b);
     }
 
 
     /* Increments & Decrements */
     fn inc(&mut self, addr: u16) {
-        unimplemented!();
+        let result = self.read8(addr) + 1;
+        self.write8(addr, result);
+        self.set_zn(result);
     }
 
     fn inx(&mut self) {
-        unimplemented!();
+        let result = self.x + 1;
+        self.x = result;
+        self.set_zn(result);
     }
 
     fn iny(&mut self) {
-        unimplemented!();
+        let result = self.y + 1;
+        self.y = result;
+        self.set_zn(result);
     }
 
     fn dec(&mut self, addr: u16) {
-        unimplemented!();
+        let result = self.read8(addr) - 1;
+        self.write8(addr, result);
+        self.set_zn(result);
     }
 
     fn dex(&mut self) {
-        unimplemented!();
+        let result = self.x - 1;
+        self.x = result;
+        self.set_zn(result);
     }
 
     fn dey(&mut self) {
-        unimplemented!();
+        let result = self.y - 1;
+        self.y = result;
+        self.set_zn(result);
     }
 
 
     /* Shifts */
+    fn shl_base(&mut self, addr: u16, msb: bool) {
+        unimplemented!();
+    }
+
+    fn shr_base(&mut self, addr: u16, msb: bool) {
+        unimplemented!();
+    }
+
     fn asl(&mut self, addr: Option<u16>) {
         unimplemented!();
     }
@@ -466,103 +557,177 @@ impl<M: Mem> Cpu<M> {
 
     /* Jumps & Calls */
     fn jmp(&mut self, addr: u16) {
-        unimplemented!();
+        self.pc = addr;
     }
 
     fn jsr(&mut self, addr: u16) {
-        unimplemented!();
+        let pc = self.pc - 1;
+        self.push16(pc);
+        self.pc = addr;
     }
 
     fn rts(&mut self) {
-        unimplemented!();
+        let pc = self.pull16() + 1;
+        self.pc = pc;
     }
 
 
     /* Branches */
     fn bcc(&mut self, addr: u16) {
-        unimplemented!();
+        if !self.get_status(CARRY_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bcs(&mut self, addr: u16) {
-        unimplemented!();
+        if self.get_status(CARRY_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn beq(&mut self, addr: u16) {
-        unimplemented!();
+        if self.get_status(ZERO_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bmi(&mut self, addr: u16) {
-        unimplemented!();
+        if self.get_status(NEGATIVE_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bne(&mut self, addr: u16) {
-        unimplemented!();
+        if !self.get_status(ZERO_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bpl(&mut self, addr: u16) {
-        unimplemented!();
+        if !self.get_status(NEGATIVE_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bvc(&mut self, addr: u16) {
-        unimplemented!();
+        if !self.get_status(OVERFLOW_FLAG) {
+            self.pc = addr;
+        }
     }
 
     fn bvs(&mut self, addr: u16) {
-        unimplemented!();
+        if self.get_status(OVERFLOW_FLAG) {
+            self.pc = addr;
+        }
     }
 
 
     /* Status Flag Changes */
     fn clc(&mut self) {
-        unimplemented!();
+        self.set_status(CARRY_FLAG, false);
     }
 
     fn cld(&mut self) {
-        unimplemented!();
+        self.set_status(DECIMAL_FLAG, false);
     }
 
     fn cli(&mut self) {
-        unimplemented!();
+        self.set_status(IRQ_FLAG, false);
     }
 
     fn clv(&mut self) {
-        unimplemented!();
+        self.set_status(OVERFLOW_FLAG, false);
     }
 
     fn sec(&mut self) {
-        unimplemented!();
+        self.set_status(CARRY_FLAG, true);
     }
 
     fn sed(&mut self) {
-        unimplemented!();
+        self.set_status(DECIMAL_FLAG, true);
     }
 
     fn sei(&mut self) {
-        unimplemented!();
+        self.set_status(IRQ_FLAG, true);
     }
 
 
     /* System Functions */
     fn brk(&mut self) {
-        unimplemented!();
+        self.jsr(0xFFFE);
+        self.php();
+        self.sei();
     }
 
-    fn nop(&mut self) {
-        unimplemented!();
-    }
+    fn nop(&mut self) {}
 
     fn rti(&mut self) {
-        unimplemented!();
+        self.plp();
+        self.pc = self.pull16();
     }
 
+
+    /* Flag helpers */
+    fn get_status(&mut self, status: u8) -> bool {
+        (self.status & status) != 0
+    }
+
+    fn set_status(&mut self, status: u8, on: bool) {
+        if on {
+            self.status |= status;
+        } else {
+            self.status &= !status;
+        }
+    }
+
+    fn read_status(&mut self) -> u8 {
+        self.status | 0x30
+    }
+
+    fn write_status(&mut self, val: u8) {
+        self.status |= val & !0x30;
+    }
+
+    fn set_zn(&mut self, val: u8) {
+        self.set_status(ZERO_FLAG, val == 0);
+        self.set_status(NEGATIVE_FLAG, (val >> 7) != 0);
+    }
+
+
+    /* Stack helpers */
+    fn pull8(&mut self) -> u8 {
+        let sp = self.sp as u16;
+        let val = self.read8(0x0100 + sp + 1);
+        self.sp += 1;
+        val
+    }
+
+    fn push8(&mut self, val: u8) {
+        let sp = self.sp as u16;
+        self.write8(0x0100 + sp, val);
+        self.sp -= 1;
+    }
+
+    fn pull16(&mut self) -> u16 {
+        let sp = self.sp as u16;
+        let val = self.read16(0x0100 + sp + 1);
+        self.sp += 2;
+        val
+    }
+
+    fn push16(&mut self, val: u16) {
+        let sp = self.sp as u16;
+        self.write16(0x0100 + (sp - 1), val);
+        self.sp -= 2;
+    }
 }
 
 impl<M: Mem> Mem for Cpu<M> {
-    fn read8(&self, index: u16) -> u8 {
-        self.mem.read8(index)
+    fn read8(&self, addr: u16) -> u8 {
+        self.mem.read8(addr)
     }
 
-    fn write8(&mut self, index: u16, val: u8) {
-        self.mem.write8(index, val)
+    fn write8(&mut self, addr: u16, val: u8) {
+        self.mem.write8(addr, val)
     }
 }

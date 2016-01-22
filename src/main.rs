@@ -16,5 +16,7 @@ fn main() {
     let mem = MemMap::new(cartridge);
     let mut cpu = Cpu::new(mem);
 
-    cpu.step();
+    loop {
+        cpu.step();
+    }
 }
