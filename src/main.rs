@@ -3,6 +3,7 @@
 mod cartridge;
 mod mem;
 mod cpu;
+mod opcode;
 
 use std::fs::File;
 use cartridge::Cartridge;
