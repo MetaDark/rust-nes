@@ -3,12 +3,14 @@ use mem::Mem;
 use opcode::{AddressingMode, Instruction};
 
 use std::fmt::Write;
+use std::fs::File;
+use std::io::BufReader;
+use std::io::BufRead;
 
 /*
  * Reference: http://obelisk.me.uk/6502/instructions.html
  * TODO:
  *   - Use the bitfield crate for flags
- *   - Modify instructions to take generic references instead of just a u16 addr
  */
 
 const CARRY_FLAG:    u8 = 1 << 0;
@@ -56,7 +58,6 @@ impl<M: Mem> Cpu<M> {
     }
 
     pub fn step(&mut self) {
-        self.trace();
         let opcode = self.next8();
 
         let addr = match AddressingMode::from(opcode) {
@@ -136,35 +137,6 @@ impl<M: Mem> Cpu<M> {
             /* Treat unofficial instructions as NOP */
             _ => self.nop(),
         };
-    }
-
-    pub fn trace(&self) {
-        let addr = self.pc;
-        let opcode = self.read8(addr);
-
-        let mode = AddressingMode::from(opcode);
-        let instruction = Instruction::from(opcode);
-
-        let mut hex = String::new();
-        for i in 0..mode.bytes() + 1 {
-            write!(hex, "{:02X} ", self.read8(addr + i as u16)).unwrap();
-        }
-
-        let repr = format!("{:?}", instruction);
-
-        let buf = format!(
-            "{:04X}  {:<10}{:<31} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
-            addr,
-            hex,
-            repr,
-            self.a,
-            self.x,
-            self.y,
-            self.get_status() & !0x10,
-            self.sp,
-        );
-
-        println!("{}", buf);
     }
 
     /* Addressing Modes */
@@ -288,7 +260,6 @@ impl<M: Mem> Cpu<M> {
     fn txs(&mut self) {
         let val = self.x;
         self.sp = val;
-        self.set_zn(val);
     }
 
     fn pha(&mut self) {
@@ -660,5 +631,53 @@ impl<M: Mem> Cpu<M> {
     fn set_zn(&mut self, val: u8) {
         self.set_flag(ZERO_FLAG, val == 0);
         self.set_flag(NEGATIVE_FLAG, val & 0x80 != 0);
+    }
+
+    /* Debug helpers */
+    pub fn trace(&self) -> String {
+        let addr = self.pc;
+        let opcode = self.read8(addr);
+
+        let mode = AddressingMode::from(opcode);
+        let instruction = Instruction::from(opcode);
+
+        let mut hex_repr = String::new();
+        for i in 0..mode.bytes() + 1 {
+            write!(hex_repr, "{:02X} ", self.read8(addr + i as u16)).unwrap();
+        }
+
+        let display_repr = format!("{:?}", instruction);
+
+        format!(
+            "{:04X}  {:<10}{:<31} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
+            addr,
+            hex_repr,
+            display_repr,
+            self.a,
+            self.x,
+            self.y,
+            self.get_status() & !0x10,
+            self.sp,
+        )
+    }
+
+    pub fn nestest(&mut self) {
+        let file = File::open("test/nestest-mod.log").unwrap();
+        let reader = BufReader::new(file);
+
+        for line in reader.lines() {
+            let line = line.unwrap();
+
+            let trace = self.trace();
+            let expected = line.trim_right();
+
+            if trace != expected {
+                println!("Expected: {}", expected);
+                println!("Obtained: {}", trace);
+                break;
+            }
+
+            self.step();
+        }
     }
 }
