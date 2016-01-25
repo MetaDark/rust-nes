@@ -6,9 +6,11 @@ use std::fmt::Write;
 
 /*
  * Reference: http://obelisk.me.uk/6502/instructions.html
+ * TODO:
+ *   - Use the bitfield crate for flags
+ *   - Modify instructions to take generic references instead of just a u16 addr
  */
 
-/* TODO: Use a bitfield macro for simplication */
 const CARRY_FLAG:    u8 = 1 << 0;
 const ZERO_FLAG:     u8 = 1 << 1;
 const IRQ_FLAG:      u8 = 1 << 2;
@@ -55,7 +57,6 @@ impl<M: Mem> Cpu<M> {
 
     pub fn step(&mut self) {
         self.trace();
-
         let opcode = self.next8();
 
         let addr = match AddressingMode::from(opcode) {
@@ -159,7 +160,7 @@ impl<M: Mem> Cpu<M> {
             self.a,
             self.x,
             self.y,
-            self.read_status() & !0x10,
+            self.get_status() & !0x10,
             self.sp,
         );
 
@@ -296,7 +297,7 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn php(&mut self) {
-        let status = self.read_status();
+        let status = self.get_status();
         self.push8(status);
     }
 
@@ -308,7 +309,7 @@ impl<M: Mem> Cpu<M> {
 
     fn plp(&mut self) {
         let status = self.pull8();
-        self.write_status(status);
+        self.set_status(status);
     }
 
 
@@ -334,9 +335,9 @@ impl<M: Mem> Cpu<M> {
     fn bit(&mut self, addr: u16) {
         let mask = self.a;
         let val = self.read8(addr);
-        self.set_status(ZERO_FLAG, (val & mask) == 0);
-        self.set_status(OVERFLOW_FLAG, (val & 0x40) != 0);
-        self.set_status(NEGATIVE_FLAG, (val & 0x80) != 0);
+        self.set_flag(ZERO_FLAG, (val & mask) == 0);
+        self.set_flag(OVERFLOW_FLAG, (val & 0x40) != 0);
+        self.set_flag(NEGATIVE_FLAG, (val & 0x80) != 0);
     }
 
 
@@ -344,11 +345,11 @@ impl<M: Mem> Cpu<M> {
     fn adc(&mut self, addr: u16) {
         let a = self.a as u16;
         let b = self.read8(addr) as u16;
-        let result = a + b + self.get_status(CARRY_FLAG) as u16;
+        let result = a + b + self.get_flag(CARRY_FLAG) as u16;
 
         self.a = result as u8;
-        self.set_status(CARRY_FLAG, (result & 0x0100) != 0);
-        self.set_status(OVERFLOW_FLAG,
+        self.set_flag(CARRY_FLAG, (result & 0x0100) != 0);
+        self.set_flag(OVERFLOW_FLAG,
                         (a ^ b) & 0x80 == 0 &&
                         (a ^ result) & 0x80 != 0);
 
@@ -358,11 +359,11 @@ impl<M: Mem> Cpu<M> {
     fn sbc(&mut self, addr: u16) {
         let a = self.a as i16;
         let b = self.read8(addr) as i16;
-        let result = a - b - !self.get_status(CARRY_FLAG) as i16;
+        let result = a - b - !self.get_flag(CARRY_FLAG) as i16;
 
         self.a = result as u8;
-        self.set_status(CARRY_FLAG, (result & 0x0100) == 0);
-        self.set_status(OVERFLOW_FLAG,
+        self.set_flag(CARRY_FLAG, (result & 0x0100) == 0);
+        self.set_flag(OVERFLOW_FLAG,
                         (a ^ b) & 0x80 != 0 &&
                         (a ^ result) & 0x80 != 0);
 
@@ -371,7 +372,7 @@ impl<M: Mem> Cpu<M> {
 
     fn cmp_base(&mut self, a: u8, b: u8) {
         let result = a.wrapping_sub(b);
-        self.set_status(CARRY_FLAG, a >= b);
+        self.set_flag(CARRY_FLAG, a >= b);
         self.set_zn(result);
     }
 
@@ -433,28 +434,54 @@ impl<M: Mem> Cpu<M> {
 
 
     /* Shifts */
-    fn shl_base(&mut self, addr: u16, msb: bool) {
-        unimplemented!();
+    fn shl_base(&mut self, addr: Option<u16>, c: bool) {
+        let val = match addr {
+            Some(addr) => self.read8(addr),
+            None => self.a,
+        };
+
+        let result = val << 1 | c as u8;
+        self.set_flag(CARRY_FLAG, val & 0x80 != 0);
+        self.set_zn(result);
+
+        match addr {
+            Some(addr) => self.write8(addr, result),
+            None => self.a = result,
+        };
     }
 
-    fn shr_base(&mut self, addr: u16, msb: bool) {
-        unimplemented!();
+    fn shr_base(&mut self, addr: Option<u16>, c: bool) {
+        let val = match addr {
+            Some(addr) => self.read8(addr),
+            None => self.a,
+        };
+
+        let result = val >> 1 | (c as u8) << 7;
+        self.set_flag(CARRY_FLAG, val & 0x01 != 0);
+        self.set_zn(result);
+
+        match addr {
+            Some(addr) => self.write8(addr, result),
+            None => self.a = result,
+        };
     }
 
     fn asl(&mut self, addr: Option<u16>) {
-        unimplemented!();
+        self.shl_base(addr, false);
     }
 
     fn lsr(&mut self, addr: Option<u16>) {
-        unimplemented!();
+        self.shr_base(addr, false);
     }
 
     fn rol(&mut self, addr: Option<u16>) {
-        unimplemented!();
+        let c = self.get_flag(CARRY_FLAG);
+        self.shl_base(addr, c);
     }
 
     fn ror(&mut self, addr: Option<u16>) {
-        unimplemented!();
+        let c = self.get_flag(CARRY_FLAG);
+        self.shr_base(addr, c);
     }
 
 
@@ -477,49 +504,49 @@ impl<M: Mem> Cpu<M> {
 
     /* Branches */
     fn bcc(&mut self, addr: u16) {
-        if !self.get_status(CARRY_FLAG) {
+        if !self.get_flag(CARRY_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bcs(&mut self, addr: u16) {
-        if self.get_status(CARRY_FLAG) {
+        if self.get_flag(CARRY_FLAG) {
             self.pc = addr;
         }
     }
 
     fn beq(&mut self, addr: u16) {
-        if self.get_status(ZERO_FLAG) {
+        if self.get_flag(ZERO_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bmi(&mut self, addr: u16) {
-        if self.get_status(NEGATIVE_FLAG) {
+        if self.get_flag(NEGATIVE_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bne(&mut self, addr: u16) {
-        if !self.get_status(ZERO_FLAG) {
+        if !self.get_flag(ZERO_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bpl(&mut self, addr: u16) {
-        if !self.get_status(NEGATIVE_FLAG) {
+        if !self.get_flag(NEGATIVE_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bvc(&mut self, addr: u16) {
-        if !self.get_status(OVERFLOW_FLAG) {
+        if !self.get_flag(OVERFLOW_FLAG) {
             self.pc = addr;
         }
     }
 
     fn bvs(&mut self, addr: u16) {
-        if self.get_status(OVERFLOW_FLAG) {
+        if self.get_flag(OVERFLOW_FLAG) {
             self.pc = addr;
         }
     }
@@ -527,31 +554,31 @@ impl<M: Mem> Cpu<M> {
 
     /* Status Flag Changes */
     fn clc(&mut self) {
-        self.set_status(CARRY_FLAG, false);
+        self.set_flag(CARRY_FLAG, false);
     }
 
     fn cld(&mut self) {
-        self.set_status(DECIMAL_FLAG, false);
+        self.set_flag(DECIMAL_FLAG, false);
     }
 
     fn cli(&mut self) {
-        self.set_status(IRQ_FLAG, false);
+        self.set_flag(IRQ_FLAG, false);
     }
 
     fn clv(&mut self) {
-        self.set_status(OVERFLOW_FLAG, false);
+        self.set_flag(OVERFLOW_FLAG, false);
     }
 
     fn sec(&mut self) {
-        self.set_status(CARRY_FLAG, true);
+        self.set_flag(CARRY_FLAG, true);
     }
 
     fn sed(&mut self) {
-        self.set_status(DECIMAL_FLAG, true);
+        self.set_flag(DECIMAL_FLAG, true);
     }
 
     fn sei(&mut self) {
-        self.set_status(IRQ_FLAG, true);
+        self.set_flag(IRQ_FLAG, true);
     }
 
 
@@ -610,11 +637,11 @@ impl<M: Mem> Cpu<M> {
     }
 
     /* Flag helpers */
-    fn get_status(&self, status: u8) -> bool {
+    fn get_flag(&self, status: u8) -> bool {
         (self.status & status) != 0
     }
 
-    fn set_status(&mut self, status: u8, on: bool) {
+    fn set_flag(&mut self, status: u8, on: bool) {
         if on {
             self.status |= status;
         } else {
@@ -622,16 +649,16 @@ impl<M: Mem> Cpu<M> {
         }
     }
 
-    fn read_status(&self) -> u8 {
+    fn get_status(&self) -> u8 {
         self.status | 0x30
     }
 
-    fn write_status(&mut self, val: u8) {
+    fn set_status(&mut self, val: u8) {
         self.status = val & !0x30;
     }
 
     fn set_zn(&mut self, val: u8) {
-        self.set_status(ZERO_FLAG, val == 0);
-        self.set_status(NEGATIVE_FLAG, val & 0x80 != 0);
+        self.set_flag(ZERO_FLAG, val == 0);
+        self.set_flag(NEGATIVE_FLAG, val & 0x80 != 0);
     }
 }
