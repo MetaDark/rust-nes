@@ -335,8 +335,8 @@ impl<M: Mem> Cpu<M> {
         let mask = self.a;
         let val = self.read8(addr);
         self.set_status(ZERO_FLAG, (val & mask) == 0);
-        self.set_status(OVERFLOW_FLAG, (val >> 6 & 1) != 0);
-        self.set_status(NEGATIVE_FLAG, (val >> 7 & 1) != 0);
+        self.set_status(OVERFLOW_FLAG, (val & 0x40) != 0);
+        self.set_status(NEGATIVE_FLAG, (val & 0x80) != 0);
     }
 
 
@@ -348,24 +348,30 @@ impl<M: Mem> Cpu<M> {
 
         self.a = result as u8;
         self.set_status(CARRY_FLAG, (result & 0x0100) != 0);
-        self.set_status(OVERFLOW_FLAG, unimplemented!());
+        self.set_status(OVERFLOW_FLAG,
+                        (a ^ b) & 0x80 == 0 &&
+                        (a ^ result) & 0x80 != 0);
+
         self.set_zn(result as u8);
     }
 
     fn sbc(&mut self, addr: u16) {
-        let a = self.a as u16;
-        let b = self.read8(addr) as u16;
-        let result = a - b - !self.get_status(CARRY_FLAG) as u16;
+        let a = self.a as i16;
+        let b = self.read8(addr) as i16;
+        let result = a - b - !self.get_status(CARRY_FLAG) as i16;
 
         self.a = result as u8;
         self.set_status(CARRY_FLAG, (result & 0x0100) == 0);
-        self.set_status(OVERFLOW_FLAG, unimplemented!());
+        self.set_status(OVERFLOW_FLAG,
+                        (a ^ b) & 0x80 != 0 &&
+                        (a ^ result) & 0x80 != 0);
+
         self.set_zn(result as u8);
     }
 
     fn cmp_base(&mut self, a: u8, b: u8) {
-        let result = a - b;
-        self.set_status(CARRY_FLAG, b <= a);
+        let result = a.wrapping_sub(b);
+        self.set_status(CARRY_FLAG, a >= b);
         self.set_zn(result);
     }
 
@@ -390,37 +396,37 @@ impl<M: Mem> Cpu<M> {
 
     /* Increments & Decrements */
     fn inc(&mut self, addr: u16) {
-        let result = self.read8(addr) + 1;
+        let result = self.read8(addr).wrapping_add(1);
         self.write8(addr, result);
         self.set_zn(result);
     }
 
     fn inx(&mut self) {
-        let result = self.x + 1;
+        let result = self.x.wrapping_add(1);
         self.x = result;
         self.set_zn(result);
     }
 
     fn iny(&mut self) {
-        let result = self.y + 1;
+        let result = self.y.wrapping_add(1);
         self.y = result;
         self.set_zn(result);
     }
 
     fn dec(&mut self, addr: u16) {
-        let result = self.read8(addr) - 1;
+        let result = self.read8(addr).wrapping_sub(1);
         self.write8(addr, result);
         self.set_zn(result);
     }
 
     fn dex(&mut self) {
-        let result = self.x - 1;
+        let result = self.x.wrapping_sub(1);
         self.x = result;
         self.set_zn(result);
     }
 
     fn dey(&mut self) {
-        let result = self.y - 1;
+        let result = self.y.wrapping_sub(1);
         self.y = result;
         self.set_zn(result);
     }
@@ -458,13 +464,13 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn jsr(&mut self, addr: u16) {
-        let pc = self.pc - 1;
+        let pc = self.pc.wrapping_sub(1);
         self.push16(pc);
         self.pc = addr;
     }
 
     fn rts(&mut self) {
-        let pc = self.pull16() + 1;
+        let pc = self.pull16().wrapping_add(1);
         self.pc = pc;
     }
 
@@ -626,6 +632,6 @@ impl<M: Mem> Cpu<M> {
 
     fn set_zn(&mut self, val: u8) {
         self.set_status(ZERO_FLAG, val == 0);
-        self.set_status(NEGATIVE_FLAG, (val >> 7 & 1) != 0);
+        self.set_status(NEGATIVE_FLAG, val & 0x80 != 0);
     }
 }
