@@ -1,24 +1,22 @@
-#![allow(unused_variables)]
-use mem::Mem;
 use opcode::{AddressingMode, Instruction};
-
-use std::iter::Iterator;
 
 use std::io::{self, BufReader};
 use std::io::prelude::*;
 use std::fs::File;
 
 /*
- * Reference: http://obelisk.me.uk/6502/instructions.html
+ * References:
+ *  - http://obelisk.me.uk/6502/instructions.html
+ *  - http://wiki.nesdev.com/w/index.php/CPU_unofficial_opcodes
+ *
  * TODO:
- *   - Use the bitfield crate for flags
+ *  - Use the bitfield crate for flags
  */
 
 const CARRY_FLAG:    u8 = 1 << 0;
 const ZERO_FLAG:     u8 = 1 << 1;
 const IRQ_FLAG:      u8 = 1 << 2;
 const DECIMAL_FLAG:  u8 = 1 << 3;
-const BREAK_FLAG:    u8 = 1 << 4;
 const OVERFLOW_FLAG: u8 = 1 << 6;
 const NEGATIVE_FLAG: u8 = 1 << 7;
 
@@ -40,7 +38,7 @@ impl<M: Mem> Cpu<M> {
             pc: 0xc000,
             sp: 0xfd,
             a: 0, x: 0, y: 0,
-            status: 0x24,
+            status: 0x34,
         }
     }
 
@@ -567,6 +565,25 @@ impl<M: Mem> Cpu<M> {
     }
 
     /* Memory helpers */
+    fn read16(&self, addr: u16) -> u16 {
+        let low = self.read8(addr) as u16;
+        let high = self.read8(addr.wrapping_add(1)) as u16;
+        high << 8 | low
+    }
+
+    fn read16_zero_page(&self, addr: u8) -> u16 {
+        let low = self.read8(addr as u16) as u16;
+        let high = self.read8(addr.wrapping_add(1) as u16) as u16;
+        high << 8 | low
+    }
+
+    fn write16(&mut self, addr: u16, val: u16) {
+        let low = val as u8;
+        let high = (val >> 8) as u8;
+        self.write8(addr, low);
+        self.write8(addr.wrapping_add(1), high);
+    }
+
     fn next8(&mut self) -> u8 {
         let val = self.read8(self.pc);
         self.pc = self.pc.wrapping_add(1);
@@ -708,6 +725,11 @@ impl<M: Mem> Cpu<M> {
             self.sp,
         )
     }
+}
+
+pub trait Mem {
+    fn read8(&self, addr: u16) -> u8;
+    fn write8(&mut self, addr: u16, val: u8);
 }
 
 impl<M: Mem> Mem for Cpu<M> {

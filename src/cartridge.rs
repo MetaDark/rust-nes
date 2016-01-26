@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
+use cpu;
 use std::io::{self, Read};
-use mem::Mem;
 
 #[derive(Debug)]
 pub enum Error {
@@ -55,7 +57,7 @@ impl Cartridge {
     }
 }
 
-impl Mem for Cartridge {
+impl cpu::Mem for Cartridge {
     fn read8(&self, addr: u16) -> u8 {
         match addr {
             0x8000 ... 0xFFFF =>
