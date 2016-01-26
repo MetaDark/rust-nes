@@ -171,17 +171,17 @@ impl<M: Mem> Cpu<M> {
 
     fn indirect(&mut self) -> u16 {
         let addr = self.next16();
-        self.read16(addr)
+        self.read16_zero_page(addr)
     }
 
     fn indexed_indirect(&mut self) -> u16 {
         let addr = self.next8();
-        self.read16_zero_page(addr.wrapping_add(self.x))
+        self.read16_zero_page(addr.wrapping_add(self.x) as u16)
     }
 
     fn indirect_indexed(&mut self) -> u16 {
         let addr = self.next8();
-        self.read16_zero_page(addr).wrapping_add(self.y as u16)
+        self.read16_zero_page(addr as u16).wrapping_add(self.y as u16)
     }
 
     /* Load / Store */
@@ -557,7 +557,7 @@ impl<M: Mem> Cpu<M> {
         self.sei();
     }
 
-    fn nop(&mut self) {}
+    fn nop(&self) {}
 
     fn rti(&mut self) {
         self.plp();
@@ -571,9 +571,15 @@ impl<M: Mem> Cpu<M> {
         high << 8 | low
     }
 
-    fn read16_zero_page(&self, addr: u8) -> u16 {
-        let low = self.read8(addr as u16) as u16;
-        let high = self.read8(addr.wrapping_add(1) as u16) as u16;
+    /*
+     * Only the lowest nibble of addr is
+     * incremented on a zero page read
+     *
+     * This is the cause of the indirect JMP bug on the 6502
+     */
+    fn read16_zero_page(&self, addr: u16) -> u16 {
+        let low = self.read8(addr) as u16;
+        let high = self.read8(addr & 0xFF00 | (addr as u8).wrapping_add(1) as u16) as u16;
         high << 8 | low
     }
 
@@ -732,6 +738,10 @@ pub trait Mem {
     fn write8(&mut self, addr: u16, val: u8);
 }
 
+/*
+ * TODO(Future):
+ * Method delegation: https://github.com/rust-lang/rfcs/pull/1406
+ */
 impl<M: Mem> Mem for Cpu<M> {
     fn read8(&self, addr: u16) -> u8 {
         self.mem.read8(addr)
