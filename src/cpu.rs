@@ -2,10 +2,11 @@
 use mem::Mem;
 use opcode::{AddressingMode, Instruction};
 
-use std::fmt::Write;
+use std::iter::Iterator;
+
+use std::io::{self, BufReader};
+use std::io::prelude::*;
 use std::fs::File;
-use std::io::BufReader;
-use std::io::BufRead;
 
 /*
  * Reference: http://obelisk.me.uk/6502/instructions.html
@@ -634,16 +635,63 @@ impl<M: Mem> Cpu<M> {
     }
 
     /* Debug helpers */
-    pub fn trace(&self) -> String {
+    pub fn interactive(&mut self) {
+        fn prompt() {
+            print!("> ");
+            io::stdout().flush().unwrap();
+        }
+
+        prompt();
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let line = line.unwrap();
+
+            let mut input = line.split(' ');
+            let command = input.next();
+
+            match command {
+                Some("test") => self.nestest(),
+                Some("trace") => println!("{}", self.trace()),
+                Some("quit") => break,
+                _ => println!("Invalid command"),
+            }
+
+            prompt();
+        }
+    }
+
+    fn nestest(&mut self) {
+        let file = File::open("test/nestest-mod.log").unwrap();
+        let reader = BufReader::new(file);
+
+        for (i, line) in reader.lines().enumerate() {
+            let line = line.unwrap();
+
+            let trace = self.trace();
+            let expected = line.trim_right();
+
+            if trace != expected {
+                println!("Test Failed (line {})", i + 1);
+                println!("Expected: {}", expected);
+                println!("Obtained: {}", trace);
+                break;
+            }
+
+            println!("{}", trace);
+            self.step();
+        }
+    }
+
+    fn trace(&self) -> String {
         let addr = self.pc;
         let opcode = self.read8(addr);
 
         let mode = AddressingMode::from(opcode);
         let instruction = Instruction::from(opcode);
 
-        let mut hex_repr = String::new();
+        let mut hex_repr = Vec::new();
         for i in 0..mode.bytes() + 1 {
-            write!(hex_repr, "{:02X} ", self.read8(addr + i as u16)).unwrap();
+            write!(&mut hex_repr, "{:02X} ", self.read8(addr + i as u16)).unwrap();
         }
 
         let display_repr = format!("{:?}", instruction);
@@ -651,7 +699,7 @@ impl<M: Mem> Cpu<M> {
         format!(
             "{:04X}  {:<10}{:<31} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}",
             addr,
-            hex_repr,
+            String::from_utf8(hex_repr).unwrap(),
             display_repr,
             self.a,
             self.x,
@@ -659,25 +707,5 @@ impl<M: Mem> Cpu<M> {
             self.get_status() & !0x10,
             self.sp,
         )
-    }
-
-    pub fn nestest(&mut self) {
-        let file = File::open("test/nestest-mod.log").unwrap();
-        let reader = BufReader::new(file);
-
-        for line in reader.lines() {
-            let line = line.unwrap();
-
-            let trace = self.trace();
-            let expected = line.trim_right();
-
-            if trace != expected {
-                println!("Expected: {}", expected);
-                println!("Obtained: {}", trace);
-                break;
-            }
-
-            self.step();
-        }
     }
 }
