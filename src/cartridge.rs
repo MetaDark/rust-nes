@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cpu;
+use mem::Mem;
 use std::io::{self, Read};
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ impl From<io::Error> for Error {
     }
 }
 
-pub type Cartridge = cpu::Mem;
+pub type Cartridge = Mem;
 impl Cartridge {
     pub fn new(stream: &mut Read) -> Result<Box<Cartridge>, Error> {
         let mut header = [0; 16];
@@ -58,7 +58,7 @@ pub struct Mapper0 {
     chr_rom: Box<[u8]>,
 }
 
-impl cpu::Mem for Mapper0 {
+impl Mem for Mapper0 {
     fn read8(&self, addr: u16) -> u8 {
         match addr {
             0x8000 ... 0xFFFF =>

@@ -1,3 +1,4 @@
+use mem::Mem;
 use opcode::{AddressingMode, Instruction};
 
 use std::io::{self, BufReader};
@@ -731,11 +732,6 @@ impl<M: Mem> Cpu<M> {
             self.sp,
         )
     }
-}
-
-pub trait Mem {
-    fn read8(&self, addr: u16) -> u8;
-    fn write8(&mut self, addr: u16, val: u8);
 }
 
 /*
