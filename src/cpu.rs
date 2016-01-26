@@ -45,7 +45,13 @@ impl<M: Mem> Cpu<M> {
     }
 
     pub fn reset(&mut self) {
-        unimplemented!();
+        self.clock = 0;
+        self.pc = 0xc000;
+        self.sp = 0xfd;
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.status = 0x34;
     }
 
     pub fn step(&mut self) {
@@ -642,9 +648,11 @@ impl<M: Mem> Cpu<M> {
             let command = input.next();
 
             match command {
-                Some("test") => self.nestest(),
+                Some("reset") | Some("r") => self.reset(),
+                Some("step") | Some("") => {println!("{}", self.trace()); self.step();},
+                Some("test") | Some("t") => self.nestest(),
                 Some("trace") => println!("{}", self.trace()),
-                Some("quit") => break,
+                Some("quit") | Some("q") => break,
                 _ => println!("Invalid command"),
             }
 
