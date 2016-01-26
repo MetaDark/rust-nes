@@ -1,13 +1,13 @@
 use cpu;
 use cartridge::Cartridge;
 
-pub struct Mem {
+pub struct Mem<'a> {
     ram: [u8; 0x0800],
-    cartridge: Cartridge,
+    cartridge: &'a Cartridge,
 }
 
-impl Mem {
-    pub fn new(cartridge: Cartridge) -> Mem {
+impl<'a> Mem<'a> {
+    pub fn new(cartridge: &'a Cartridge) -> Mem<'a> {
         Mem {
             ram: [0; 0x0800],
             cartridge: cartridge,
@@ -15,7 +15,7 @@ impl Mem {
     }
 }
 
-impl cpu::Mem for Mem {
+impl<'a> cpu::Mem for Mem<'a> {
     fn read8(&self, addr: u16) -> u8 {
         match addr {
             0x0000 ... 0x1fff => self.ram[(addr % 0x0800) as usize],
