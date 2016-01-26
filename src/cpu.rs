@@ -32,16 +32,6 @@ pub struct Cpu<M: Mem> {
     status: u8,
 }
 
-impl<M: Mem> Mem for Cpu<M> {
-    fn read8(&self, addr: u16) -> u8 {
-        self.mem.read8(addr)
-    }
-
-    fn write8(&mut self, addr: u16, val: u8) {
-        self.mem.write8(addr, val)
-    }
-}
-
 impl<M: Mem> Cpu<M> {
     pub fn new(mem: M) -> Cpu<M> {
         Cpu {
@@ -152,15 +142,15 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn zero_page_x(&mut self) -> u16 {
-        (self.next8() + self.x) as u16
+        (self.next8().wrapping_add(self.x)) as u16
     }
 
     fn zero_page_y(&mut self) -> u16 {
-        (self.next8() + self.y) as u16
+        (self.next8().wrapping_add(self.y)) as u16
     }
 
     fn relative(&mut self) -> u16 {
-        self.next8() as u16 + self.pc
+        (self.next8() as u16).wrapping_add(self.pc)
     }
 
     fn absolute(&mut self) -> u16 {
@@ -168,11 +158,11 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn absolute_x(&mut self) -> u16 {
-        self.next16() + self.x as u16
+        self.next16().wrapping_add(self.x as u16)
     }
 
     fn absolute_y(&mut self) -> u16 {
-        self.next16() + self.y as u16
+        self.next16().wrapping_add(self.y as u16)
     }
 
     fn indirect(&mut self) -> u16 {
@@ -181,13 +171,13 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn indexed_indirect(&mut self) -> u16 {
-        let addr = self.next8() as u16;
-        self.read16(addr) + self.y as u16
+        let addr = self.next8();
+        self.read16_zero_page(addr.wrapping_add(self.x))
     }
 
     fn indirect_indexed(&mut self) -> u16 {
-        let addr = self.next8() as u16;
-        self.read16(addr + self.x as u16)
+        let addr = self.next8();
+        self.read16_zero_page(addr).wrapping_add(self.y as u16)
     }
 
     /* Load / Store */
@@ -317,7 +307,8 @@ impl<M: Mem> Cpu<M> {
     fn adc(&mut self, addr: u16) {
         let a = self.a as u16;
         let b = self.read8(addr) as u16;
-        let result = a + b + self.get_flag(CARRY_FLAG) as u16;
+        let c = self.get_flag(CARRY_FLAG) as u16;
+        let result = a.wrapping_add(b).wrapping_add(c);
 
         self.a = result as u8;
         self.set_flag(CARRY_FLAG, (result & 0x0100) != 0);
@@ -329,9 +320,10 @@ impl<M: Mem> Cpu<M> {
     }
 
     fn sbc(&mut self, addr: u16) {
-        let a = self.a as i16;
-        let b = self.read8(addr) as i16;
-        let result = a - b - !self.get_flag(CARRY_FLAG) as i16;
+        let a = self.a as u16;
+        let b = self.read8(addr) as u16;
+        let c = !self.get_flag(CARRY_FLAG) as u16;
+        let result = a.wrapping_sub(b).wrapping_sub(c);
 
         self.a = result as u8;
         self.set_flag(CARRY_FLAG, (result & 0x0100) == 0);
@@ -571,41 +563,41 @@ impl<M: Mem> Cpu<M> {
     /* Memory helpers */
     fn next8(&mut self) -> u8 {
         let val = self.read8(self.pc);
-        self.pc += 1;
+        self.pc = self.pc.wrapping_add(1);
         val
     }
 
     fn next16(&mut self) -> u16 {
         let val = self.read16(self.pc);
-        self.pc += 2;
+        self.pc = self.pc.wrapping_add(2);
         val
     }
 
     /* Stack helpers */
     fn pull8(&mut self) -> u8 {
-        let sp = self.sp as u16;
-        let val = self.read8(0x0100 + sp + 1);
-        self.sp += 1;
+        let sp = self.sp.wrapping_add(1);
+        let val = self.read8(0x0100 + sp as u16);
+        self.sp = self.sp.wrapping_add(1);
         val
     }
 
     fn push8(&mut self, val: u8) {
-        let sp = self.sp as u16;
-        self.write8(0x0100 + sp, val);
-        self.sp -= 1;
+        let sp = self.sp;
+        self.write8(0x0100 + sp as u16, val);
+        self.sp = self.sp.wrapping_sub(1);
     }
 
     fn pull16(&mut self) -> u16 {
-        let sp = self.sp as u16;
-        let val = self.read16(0x0100 + sp + 1);
-        self.sp += 2;
+        let sp = self.sp.wrapping_add(1);
+        let val = self.read16(0x0100 + sp as u16);
+        self.sp = self.sp.wrapping_add(2);
         val
     }
 
     fn push16(&mut self, val: u16) {
-        let sp = self.sp as u16;
-        self.write16(0x0100 + (sp - 1), val);
-        self.sp -= 2;
+        let sp = self.sp.wrapping_sub(1);
+        self.write16(0x0100 + sp as u16, val);
+        self.sp = self.sp.wrapping_sub(2);
     }
 
     /* Flag helpers */
@@ -707,5 +699,15 @@ impl<M: Mem> Cpu<M> {
             self.get_status() & !0x10,
             self.sp,
         )
+    }
+}
+
+impl<M: Mem> Mem for Cpu<M> {
+    fn read8(&self, addr: u16) -> u8 {
+        self.mem.read8(addr)
+    }
+
+    fn write8(&mut self, addr: u16, val: u8) {
+        self.mem.write8(addr, val)
     }
 }

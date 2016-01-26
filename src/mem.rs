@@ -6,7 +6,13 @@ pub trait Mem {
 
     fn read16(&self, addr: u16) -> u16 {
         let low = self.read8(addr) as u16;
-        let high = self.read8(addr + 1) as u16;
+        let high = self.read8(addr.wrapping_add(1)) as u16;
+        high << 8 | low
+    }
+
+    fn read16_zero_page(&self, addr: u8) -> u16 {
+        let low = self.read8(addr as u16) as u16;
+        let high = self.read8(addr.wrapping_add(1) as u16) as u16;
         high << 8 | low
     }
 
@@ -14,7 +20,7 @@ pub trait Mem {
         let low = val as u8;
         let high = (val >> 8) as u8;
         self.write8(addr, low);
-        self.write8(addr + 1, high);
+        self.write8(addr.wrapping_add(1), high);
     }
 }
 
