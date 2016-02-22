@@ -1,0 +1,6 @@
+[package]
+name = "rusty-nest"
+version = "0.1.0"
+authors = ["MetaDark <kurt.bruneau@gmail.com>"]
+
+[dependencies]
